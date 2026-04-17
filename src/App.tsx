@@ -6,8 +6,9 @@ import Icon from "@/components/ui/icon";
 const AUTH_URL = "https://functions.poehali.dev/2bdc6ba6-896b-4882-9dd2-854d3337c3c2";
 const BOOKS_URL = "https://functions.poehali.dev/54c89388-603a-46f6-b18b-050836232b37";
 
-async function apiAuth(path: string, method = "GET", body?: object, token?: string) {
-  const res = await fetch(AUTH_URL + path, {
+async function apiAuth(action: string, method = "GET", body?: object, token?: string) {
+  const url = AUTH_URL + (action ? `?action=${action}` : "");
+  const res = await fetch(url, {
     method,
     headers: { "Content-Type": "application/json", ...(token ? { "X-Session-Id": token } : {}) },
     body: body ? JSON.stringify(body) : undefined,
@@ -15,8 +16,9 @@ async function apiAuth(path: string, method = "GET", body?: object, token?: stri
   return res.json();
 }
 
-async function apiBooks(path: string, method = "GET", body?: object, token?: string) {
-  const res = await fetch(BOOKS_URL + path, {
+async function apiBooks(action: string, method = "GET", body?: object, token?: string) {
+  const url = BOOKS_URL + (action ? `?action=${action}` : "");
+  const res = await fetch(url, {
     method,
     headers: { "Content-Type": "application/json", ...(token ? { "X-Session-Id": token } : {}) },
     body: body ? JSON.stringify(body) : undefined,
@@ -101,7 +103,7 @@ function RegisterScreen({ onAuth }: { onAuth: (u: User) => void }) {
     setLoading(true);
     setError("");
     try {
-      const data = await apiAuth("/register", "POST", { name: name.trim(), class: klass.trim() });
+      const data = await apiAuth("register", "POST", { name: name.trim(), class: klass.trim() });
       if (data.token) {
         localStorage.setItem("rc_token", data.token);
         localStorage.setItem("rc_user", JSON.stringify(data));
@@ -187,7 +189,7 @@ function AddBookModal({ token, onAdded, onClose }: { token: string; onAdded: () 
     setLoading(true);
     setError("");
     try {
-      const data = await apiBooks("/", "POST", { title: title.trim(), author: author.trim(), pages: parseInt(pages) }, token);
+      const data = await apiBooks("", "POST", { title: title.trim(), author: author.trim(), pages: parseInt(pages) }, token);
       if (data.id) { onAdded(); onClose(); }
       else setError(data.error || "Ошибка");
     } catch {
@@ -269,7 +271,7 @@ function UpdatePagesModal({ book, token, onUpdated, onClose }: {
 
   const handleSave = async () => {
     setLoading(true);
-    await apiBooks(`/${book.id}`, "PUT", { pages_read: parseInt(pagesRead) || 0 }, token);
+    await apiBooks("", "PUT", { book_id: book.id, pages_read: parseInt(pagesRead) || 0 }, token);
     onUpdated();
     onClose();
   };
@@ -931,7 +933,7 @@ export default function App() {
     if (!user) return;
     setLoadingBooks(true);
     try {
-      const data = await apiBooks("/", "GET", undefined, user.token);
+      const data = await apiBooks("", "GET", undefined, user.token);
       if (data.books) { setBooks(data.books); setStats(data.stats); }
     } catch (_e) { /* network error */ }
     finally { setLoadingBooks(false); }

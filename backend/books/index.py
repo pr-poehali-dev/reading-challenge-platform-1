@@ -60,14 +60,12 @@ def handler(event: dict, context) -> dict:
             return {"statusCode": 200, "headers": CORS,
                     "body": json.dumps({"id": book_id, "title": title, "author": author, "pages": pages})}
 
-        # PUT /{id} — обновить книгу
+        # PUT — обновить книгу (book_id передаётся в теле)
         if method == "PUT":
-            parts = path.strip("/").split("/")
-            book_id = int(parts[-1]) if parts[-1].isdigit() else None
+            body = json.loads(event.get("body") or "{}")
+            book_id = body.get("book_id")
             if not book_id:
                 return {"statusCode": 400, "headers": CORS, "body": json.dumps({"error": "Нет ID"})}
-
-            body = json.loads(event.get("body") or "{}")
             updates = []
             vals = []
 

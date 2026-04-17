@@ -23,15 +23,16 @@ def handler(event: dict, context) -> dict:
         return {"statusCode": 200, "headers": CORS, "body": ""}
 
     method = event.get("httpMethod", "GET")
-    path = event.get("path", "/")
+    qs = event.get("queryStringParameters") or {}
+    action = qs.get("action", "")
     schema = os.environ.get("MAIN_DB_SCHEMA", "public")
 
     conn = get_conn()
     cur = conn.cursor()
 
     try:
-        # POST /register
-        if method == "POST" and path.rstrip("/").endswith("register"):
+        # POST ?action=register
+        if method == "POST" and action == "register":
             body = json.loads(event.get("body") or "{}")
             name = (body.get("name") or "").strip()
             klass = (body.get("class") or "").strip()
