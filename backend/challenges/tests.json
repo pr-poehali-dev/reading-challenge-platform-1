@@ -1,0 +1,11 @@
+{
+  "tests": [
+    {
+      "name": "Get my challenges without auth",
+      "method": "GET",
+      "path": "/?action=my",
+      "expectedStatus": 401,
+      "bodyMatcher": "partial"
+    }
+  ]
+}

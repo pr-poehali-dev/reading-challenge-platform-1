@@ -39,12 +39,6 @@ const BADGES = [
   { id: 8, emoji: "💎", name: "Легенда", desc: "50+ книг", rarity: "legendary", require: (done: number) => done >= 50 },
 ];
 
-const CHALLENGES = [
-  { id: 1, title: "Майский марафон", books: 5, done: 3, days: 14, emoji: "🌸", color: "from-pink-500 to-rose-500", participants: 234 },
-  { id: 2, title: "Классика навсегда", books: 3, done: 1, days: 30, emoji: "📖", color: "from-violet-500 to-purple-600", participants: 156 },
-  { id: 3, title: "Фантастический апрель", books: 4, done: 4, days: 0, emoji: "🚀", color: "from-cyan-500 to-blue-600", participants: 89, completed: true },
-  { id: 4, title: "Нон-фикшн неделя", books: 2, done: 0, days: 7, emoji: "🧠", color: "from-orange-500 to-amber-500", participants: 312 },
-];
 
 const RATING = [
   { rank: 1, name: "Александра К.", avatar: "👑", books: 47, streak: 92, points: 4720 },
@@ -368,33 +362,16 @@ function HomePage({ user, books, stats, loading, setPage, token, onRefresh }: {
         ))}
       </div>
 
-      {/* Active challenges */}
-      <section>
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="font-display font-bold text-white text-lg">Активные челленджи</h2>
-          <button onClick={() => setPage("challenges")} className="text-violet-400 text-sm font-medium">Все →</button>
+      {/* Go to challenges CTA */}
+      <button onClick={() => setPage("challenges")}
+        className="w-full glass rounded-2xl p-4 flex items-center gap-4 hover-lift border border-violet-500/20">
+        <div className="w-12 h-12 grad-primary rounded-xl flex items-center justify-center text-2xl flex-shrink-0">🏁</div>
+        <div className="text-left">
+          <div className="font-semibold text-white">Мои челленджи</div>
+          <div className="text-white/50 text-xs">Создай или войди по коду →</div>
         </div>
-        <div className="space-y-3">
-          {CHALLENGES.filter(c => !c.completed).slice(0, 2).map(ch => (
-            <div key={ch.id} className="glass rounded-2xl p-4 hover-lift">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-3">
-                  <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${ch.color} flex items-center justify-center text-xl`}>{ch.emoji}</div>
-                  <div>
-                    <div className="font-semibold text-white text-sm">{ch.title}</div>
-                    <div className="text-white/40 text-xs">{ch.participants} участников</div>
-                  </div>
-                </div>
-                <div className="text-white/60 text-xs">{ch.days} дн.</div>
-              </div>
-              <div className="progress-bar h-2">
-                <div className="progress-fill" style={{ width: `${(ch.done / ch.books) * 100}%` }} />
-              </div>
-              <div className="mt-1.5 text-white/40 text-xs">{ch.done} из {ch.books} книг</div>
-            </div>
-          ))}
-        </div>
-      </section>
+        <Icon name="ChevronRight" size={18} className="text-white/30 ml-auto flex-shrink-0" />
+      </button>
 
       {/* Currently reading */}
       {readingBooks.length > 0 && (
@@ -431,63 +408,378 @@ function HomePage({ user, books, stats, loading, setPage, token, onRefresh }: {
   );
 }
 
-// ─── CHALLENGES PAGE ──────────────────────────────────────────────────────────
+// ─── CHALLENGE TYPES ──────────────────────────────────────────────────────────
 
-function ChallengesPage() {
-  const [tab, setTab] = useState<"active" | "done">("active");
+interface Challenge {
+  id: number; title: string; books_goal: number; days: number;
+  emoji: string; join_code: string; books_done: number;
+  members: number; is_creator: boolean; created_at: string;
+}
+
+const CH_COLORS = [
+  "from-pink-500 to-rose-500",
+  "from-violet-500 to-purple-600",
+  "from-cyan-500 to-blue-600",
+  "from-orange-500 to-amber-500",
+  "from-emerald-500 to-teal-600",
+  "from-fuchsia-500 to-pink-600",
+];
+
+const CHALLENGES_URL = "https://functions.poehali.dev/d28955f1-c673-40c3-89e6-6c4b16687d30";
+
+async function apiChallenges(action: string, method = "GET", body?: object, token?: string, extra?: string) {
+  const url = CHALLENGES_URL + `?action=${action}` + (extra || "");
+  const res = await fetch(url, {
+    method,
+    headers: { "Content-Type": "application/json", ...(token ? { "X-Session-Id": token } : {}) },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  return res.json();
+}
+
+// ─── CREATE CHALLENGE MODAL ───────────────────────────────────────────────────
+
+const EMOJI_OPTIONS = ["📚","🔥","⚡","🏆","🌸","🚀","🧠","🎯","🦋","💎","🌙","⭐"];
+
+function CreateChallengeModal({ token, onCreated, onClose }: {
+  token: string; onCreated: (code: string, title: string) => void; onClose: () => void;
+}) {
+  const [title, setTitle] = useState("");
+  const [booksGoal, setBooksGoal] = useState("5");
+  const [days, setDays] = useState("30");
+  const [emoji, setEmoji] = useState("📚");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const handleCreate = async () => {
+    if (!title.trim() || !booksGoal || !days) { setError("Заполни все поля"); return; }
+    setLoading(true); setError("");
+    try {
+      const data = await apiChallenges("create", "POST",
+        { title: title.trim(), books_goal: parseInt(booksGoal), days: parseInt(days), emoji },
+        token
+      );
+      if (data.id) { onCreated(data.join_code, data.title); onClose(); }
+      else setError(data.error || "Ошибка");
+    } catch { setError("Нет соединения"); }
+    finally { setLoading(false); }
+  };
+
   return (
-    <div className="p-4 space-y-6 animate-fade-in-up">
-      <div>
-        <h1 className="font-display font-black text-2xl text-white">Челленджи</h1>
-        <p className="text-white/50 text-sm mt-1">Соревнуйся и побеждай</p>
-      </div>
-      <div className="glass rounded-2xl p-1 flex">
-        {(["active", "done"] as const).map(t => (
-          <button key={t} onClick={() => setTab(t)}
-            className={`flex-1 py-2.5 rounded-xl font-semibold text-sm transition-all ${tab === t ? "grad-primary text-white" : "text-white/40"}`}>
-            {t === "active" ? "Активные" : "Завершённые"}
+    <div className="fixed inset-0 z-[100] flex items-end justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="w-full max-w-md glass-strong rounded-3xl p-6 space-y-4 animate-fade-in-up">
+        <div className="flex items-center justify-between">
+          <h2 className="font-display font-bold text-white text-lg">Создать челлендж</h2>
+          <button onClick={onClose} className="text-white/40 hover:text-white"><Icon name="X" size={20} /></button>
+        </div>
+
+        {/* Emoji picker */}
+        <div>
+          <label className="text-white/60 text-xs font-medium mb-2 block">Иконка</label>
+          <div className="flex flex-wrap gap-2">
+            {EMOJI_OPTIONS.map(e => (
+              <button key={e} onClick={() => setEmoji(e)}
+                className={`w-10 h-10 rounded-xl text-xl transition-all ${emoji === e ? "grad-primary scale-110" : "glass"}`}>
+                {e}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <label className="text-white/60 text-xs font-medium mb-1.5 block">Название</label>
+          <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Летний марафон"
+            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-white/25 focus:outline-none focus:border-violet-500/60 transition-colors" />
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="text-white/60 text-xs font-medium mb-1.5 block">Цель (книг)</label>
+            <input value={booksGoal} onChange={e => setBooksGoal(e.target.value.replace(/\D/g, ""))}
+              inputMode="numeric" placeholder="5"
+              className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-white/25 focus:outline-none focus:border-violet-500/60 transition-colors" />
+          </div>
+          <div>
+            <label className="text-white/60 text-xs font-medium mb-1.5 block">Срок (дней)</label>
+            <input value={days} onChange={e => setDays(e.target.value.replace(/\D/g, ""))}
+              inputMode="numeric" placeholder="30"
+              className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-white/25 focus:outline-none focus:border-violet-500/60 transition-colors" />
+          </div>
+        </div>
+
+        {error && <div className="bg-red-500/15 border border-red-500/30 rounded-xl px-4 py-2.5 text-red-400 text-sm">{error}</div>}
+
+        <div className="flex gap-3">
+          <button onClick={onClose} className="flex-1 glass text-white/60 font-semibold py-3 rounded-xl">Отмена</button>
+          <button onClick={handleCreate} disabled={loading} className="flex-1 grad-primary text-white font-bold py-3 rounded-xl disabled:opacity-50">
+            {loading ? "Создаю..." : "Создать"}
           </button>
-        ))}
+        </div>
       </div>
-      <div className="space-y-4">
-        {CHALLENGES.filter(c => tab === "active" ? !c.completed : c.completed).map((ch, i) => (
-          <div key={ch.id} className="glass rounded-3xl overflow-hidden hover-lift" style={{ animationDelay: `${i * 0.1}s` }}>
-            <div className={`bg-gradient-to-r ${ch.color} p-5`}>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <span className="text-3xl">{ch.emoji}</span>
-                  <div>
-                    <h3 className="font-display font-bold text-white text-lg">{ch.title}</h3>
-                    <p className="text-white/70 text-sm">{ch.participants} участников</p>
-                  </div>
-                </div>
-                {ch.completed && <div className="glass rounded-xl px-3 py-1.5 text-white text-xs font-bold">✓ Выполнен</div>}
-              </div>
-            </div>
-            <div className="p-5">
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-white/60 text-sm">Прогресс: {ch.done}/{ch.books} книг</span>
-                {!ch.completed && <span className="text-amber-400 text-sm font-semibold">⏰ {ch.days} дней</span>}
-              </div>
-              <div className="progress-bar h-3">
-                <div className="progress-fill" style={{ width: `${(ch.done / ch.books) * 100}%` }} />
-              </div>
-              <div className="mt-4 flex gap-2">
-                <button className="flex-1 grad-primary text-white font-semibold py-2.5 rounded-xl text-sm">
-                  {ch.completed ? "Смотреть результат" : "Добавить книгу"}
-                </button>
-                {!ch.completed && <button className="glass text-white/60 px-4 py-2.5 rounded-xl text-sm">Поделиться</button>}
-              </div>
+    </div>
+  );
+}
+
+// ─── JOIN CHALLENGE MODAL ─────────────────────────────────────────────────────
+
+function JoinChallengeModal({ token, onJoined, onClose }: {
+  token: string; onJoined: () => void; onClose: () => void;
+}) {
+  const [digits, setDigits] = useState(["", "", "", "", "", ""]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const code = digits.join("");
+
+  const handleDigit = (i: number, val: string) => {
+    const d = val.replace(/\D/g, "").slice(-1);
+    const next = [...digits];
+    next[i] = d;
+    setDigits(next);
+    if (d && i < 5) {
+      const nextInput = document.getElementById(`digit-${i + 1}`);
+      (nextInput as HTMLInputElement)?.focus();
+    }
+  };
+
+  const handleKey = (i: number, e: React.KeyboardEvent) => {
+    if (e.key === "Backspace" && !digits[i] && i > 0) {
+      const prevInput = document.getElementById(`digit-${i - 1}`);
+      (prevInput as HTMLInputElement)?.focus();
+    }
+  };
+
+  const handleJoin = async () => {
+    if (code.length < 6) { setError("Введи все 6 цифр"); return; }
+    setLoading(true); setError("");
+    try {
+      const data = await apiChallenges("join", "POST", { join_code: code }, token);
+      if (data.id) { onJoined(); onClose(); }
+      else setError(data.error || "Ошибка");
+    } catch { setError("Нет соединения"); }
+    finally { setLoading(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-end justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="w-full max-w-md glass-strong rounded-3xl p-6 space-y-5 animate-fade-in-up">
+        <div className="flex items-center justify-between">
+          <h2 className="font-display font-bold text-white text-lg">Войти по коду</h2>
+          <button onClick={onClose} className="text-white/40 hover:text-white"><Icon name="X" size={20} /></button>
+        </div>
+
+        <p className="text-white/50 text-sm">Попроси организатора поделиться 6-значным кодом челленджа</p>
+
+        {/* 6-digit input */}
+        <div className="flex gap-2 justify-center">
+          {digits.map((d, i) => (
+            <input
+              key={i}
+              id={`digit-${i}`}
+              value={d}
+              onChange={e => handleDigit(i, e.target.value)}
+              onKeyDown={e => handleKey(i, e)}
+              inputMode="numeric"
+              maxLength={1}
+              className={`w-12 h-14 text-center text-2xl font-display font-black rounded-xl border transition-all outline-none
+                ${d ? "bg-violet-500/20 border-violet-500 text-white" : "bg-white/5 border-white/15 text-white/30"}
+                focus:border-violet-400 focus:bg-violet-500/15`}
+            />
+          ))}
+        </div>
+
+        {error && <div className="bg-red-500/15 border border-red-500/30 rounded-xl px-4 py-2.5 text-red-400 text-sm text-center">{error}</div>}
+
+        <div className="flex gap-3">
+          <button onClick={onClose} className="flex-1 glass text-white/60 font-semibold py-3 rounded-xl">Отмена</button>
+          <button onClick={handleJoin} disabled={loading || code.length < 6}
+            className="flex-1 grad-primary text-white font-bold py-3 rounded-xl disabled:opacity-40">
+            {loading ? "Ищу..." : "Войти"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── SHARE CODE MODAL ─────────────────────────────────────────────────────────
+
+function ShareCodeModal({ code, title, onClose }: { code: string; title: string; onClose: () => void }) {
+  const [copied, setCopied] = useState(false);
+  const copy = () => {
+    navigator.clipboard.writeText(code);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="w-full max-w-sm glass-strong rounded-3xl p-6 space-y-5 animate-scale-in text-center">
+        <div className="text-4xl">🎉</div>
+        <div>
+          <h2 className="font-display font-bold text-white text-xl mb-1">Челлендж создан!</h2>
+          <p className="text-white/50 text-sm">«{title}»</p>
+        </div>
+        <div>
+          <p className="text-white/50 text-xs mb-3">Поделись кодом с друзьями</p>
+          <div className="grad-primary rounded-2xl p-5">
+            <div className="font-display font-black text-5xl text-white tracking-widest letter-spacing-wide">
+              {code.split("").join(" ")}
             </div>
           </div>
-        ))}
-      </div>
-      {tab === "active" && (
-        <button className="w-full glass rounded-2xl p-4 border-2 border-dashed border-violet-500/30 flex items-center justify-center gap-3 text-violet-400 font-semibold">
-          <Icon name="Plus" size={20} />
-          Присоединиться к новому челленджу
+        </div>
+        <button onClick={copy} className={`w-full py-3 rounded-xl font-semibold transition-all ${copied ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30" : "glass text-white"}`}>
+          {copied ? "✓ Скопировано!" : "Скопировать код"}
         </button>
+        <button onClick={onClose} className="w-full grad-primary text-white font-bold py-3 rounded-xl">Готово</button>
+      </div>
+    </div>
+  );
+}
+
+// ─── CHALLENGES PAGE ──────────────────────────────────────────────────────────
+
+function ChallengesPage({ token }: { token: string }) {
+  const [challenges, setChallenges] = useState<Challenge[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showCreate, setShowCreate] = useState(false);
+  const [showJoin, setShowJoin] = useState(false);
+  const [shareData, setShareData] = useState<{ code: string; title: string } | null>(null);
+
+  const fetchChallenges = async () => {
+    setLoading(true);
+    try {
+      const data = await apiChallenges("my", "GET", undefined, token);
+      if (data.challenges) setChallenges(data.challenges);
+    } catch (_e) { /* ignore */ }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => { fetchChallenges(); }, []);
+
+  const handleCreated = (code: string, title: string) => {
+    setShareData({ code, title });
+    fetchChallenges();
+  };
+
+  const done = challenges.filter(c => c.books_done >= c.books_goal);
+  const active = challenges.filter(c => c.books_done < c.books_goal);
+
+  return (
+    <div className="p-4 space-y-5 animate-fade-in-up">
+      {showCreate && <CreateChallengeModal token={token} onCreated={handleCreated} onClose={() => setShowCreate(false)} />}
+      {showJoin && <JoinChallengeModal token={token} onJoined={fetchChallenges} onClose={() => setShowJoin(false)} />}
+      {shareData && <ShareCodeModal code={shareData.code} title={shareData.title} onClose={() => setShareData(null)} />}
+
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="font-display font-black text-2xl text-white">Челленджи</h1>
+          <p className="text-white/50 text-sm">{challenges.length} активных</p>
+        </div>
+        <button onClick={() => setShowCreate(true)}
+          className="grad-primary text-white w-10 h-10 rounded-xl flex items-center justify-center">
+          <Icon name="Plus" size={18} />
+        </button>
+      </div>
+
+      {/* Кнопки действий */}
+      <div className="grid grid-cols-2 gap-3">
+        <button onClick={() => setShowCreate(true)}
+          className="glass rounded-2xl p-4 flex flex-col items-center gap-2 hover-lift border border-violet-500/20 text-center">
+          <div className="w-10 h-10 grad-primary rounded-xl flex items-center justify-center">
+            <Icon name="Plus" size={20} className="text-white" />
+          </div>
+          <div className="text-white font-semibold text-sm">Создать</div>
+          <div className="text-white/40 text-xs">свой челлендж</div>
+        </button>
+        <button onClick={() => setShowJoin(true)}
+          className="glass rounded-2xl p-4 flex flex-col items-center gap-2 hover-lift border border-pink-500/20 text-center">
+          <div className="w-10 h-10 grad-hot rounded-xl flex items-center justify-center">
+            <Icon name="Hash" size={20} className="text-white" />
+          </div>
+          <div className="text-white font-semibold text-sm">Войти по коду</div>
+          <div className="text-white/40 text-xs">6-значный код</div>
+        </button>
+      </div>
+
+      {loading ? (
+        <div className="space-y-3">
+          {[1, 2].map(i => <div key={i} className="glass rounded-3xl h-40 animate-pulse" />)}
+        </div>
+      ) : challenges.length === 0 ? (
+        <div className="glass rounded-2xl p-8 text-center border border-violet-500/20">
+          <div className="text-4xl mb-3">🏁</div>
+          <h3 className="font-display font-bold text-white mb-2">Нет челленджей</h3>
+          <p className="text-white/50 text-sm mb-4">Создай свой или присоединись к чужому по коду</p>
+        </div>
+      ) : (
+        <>
+          {active.length > 0 && (
+            <section>
+              <h2 className="font-semibold text-white/60 text-sm mb-3 uppercase tracking-wider">Активные</h2>
+              <div className="space-y-4">
+                {active.map((ch, i) => (
+                  <ChallengeCard key={ch.id} ch={ch} idx={i} onShare={() => setShareData({ code: ch.join_code, title: ch.title })} />
+                ))}
+              </div>
+            </section>
+          )}
+          {done.length > 0 && (
+            <section>
+              <h2 className="font-semibold text-white/60 text-sm mb-3 uppercase tracking-wider">Завершённые</h2>
+              <div className="space-y-4">
+                {done.map((ch, i) => (
+                  <ChallengeCard key={ch.id} ch={ch} idx={i} onShare={() => setShareData({ code: ch.join_code, title: ch.title })} />
+                ))}
+              </div>
+            </section>
+          )}
+        </>
       )}
+    </div>
+  );
+}
+
+function ChallengeCard({ ch, idx, onShare }: { ch: Challenge; idx: number; onShare: () => void }) {
+  const pct = Math.min(100, Math.round((ch.books_done / ch.books_goal) * 100));
+  const completed = ch.books_done >= ch.books_goal;
+  const color = CH_COLORS[ch.id % CH_COLORS.length];
+
+  return (
+    <div className="glass rounded-3xl overflow-hidden hover-lift" style={{ animationDelay: `${idx * 0.08}s` }}>
+      <div className={`bg-gradient-to-r ${color} p-5`}>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="text-3xl">{ch.emoji}</span>
+            <div>
+              <h3 className="font-display font-bold text-white text-lg leading-tight">{ch.title}</h3>
+              <p className="text-white/70 text-sm">{ch.members} участников · {ch.days} дн.</p>
+            </div>
+          </div>
+          {completed && <div className="glass rounded-xl px-3 py-1.5 text-white text-xs font-bold">✓ Готово</div>}
+        </div>
+      </div>
+      <div className="p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <span className="text-white/60 text-sm">Мой прогресс: {ch.books_done}/{ch.books_goal} книг</span>
+          <span className="text-white/50 text-sm font-semibold">{pct}%</span>
+        </div>
+        <div className="progress-bar h-2.5">
+          <div className="progress-fill" style={{ width: `${pct}%` }} />
+        </div>
+        {/* Код и поделиться */}
+        <div className="flex items-center justify-between pt-1">
+          <button onClick={onShare} className="flex items-center gap-2 glass rounded-xl px-3 py-2 text-white/60 text-xs font-semibold hover:text-white transition-colors">
+            <Icon name="Share2" size={14} />
+            Код: <span className="text-violet-400 font-display font-bold tracking-wider">{ch.join_code}</span>
+          </button>
+          {ch.is_creator && (
+            <span className="text-amber-400 text-xs font-medium flex items-center gap-1">
+              <Icon name="Crown" size={12} />
+              Автор
+            </span>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -956,7 +1248,7 @@ export default function App() {
   const renderPage = () => {
     switch (page) {
       case "home": return <HomePage user={user} books={books} stats={stats} loading={loadingBooks} setPage={setPage} token={user.token} onRefresh={fetchBooks} />;
-      case "challenges": return <ChallengesPage />;
+      case "challenges": return <ChallengesPage token={user.token} />;
       case "books": return <BooksPage books={books} stats={stats} loading={loadingBooks} token={user.token} onRefresh={fetchBooks} />;
       case "rating": return <RatingPage user={user} stats={stats} />;
       case "friends": return <FriendsPage />;
