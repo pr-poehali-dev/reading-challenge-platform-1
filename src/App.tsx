@@ -40,21 +40,6 @@ const BADGES = [
 ];
 
 
-const RATING = [
-  { rank: 1, name: "Александра К.", avatar: "👑", books: 47, streak: 92, points: 4720 },
-  { rank: 2, name: "Михаил В.", avatar: "🥈", books: 38, streak: 45, points: 3950 },
-  { rank: 3, name: "Дарья П.", avatar: "🥉", books: 31, streak: 67, points: 3210 },
-  { rank: 4, name: "Иван С.", avatar: "📚", books: 27, streak: 22, points: 2830 },
-  { rank: 6, name: "Елена М.", avatar: "🌟", books: 21, streak: 31, points: 2180 },
-  { rank: 7, name: "Олег Т.", avatar: "📖", books: 19, streak: 8, points: 1970 },
-];
-
-const FRIENDS = [
-  { id: 1, name: "Маша Иванова", avatar: "🌸", books: 18, streak: 12, status: "Читает: Война и мир", online: true },
-  { id: 2, name: "Петя Сидоров", avatar: "🎮", books: 9, streak: 5, status: "Последний онлайн: вчера", online: false },
-  { id: 3, name: "Аня Козлова", avatar: "🦋", books: 31, streak: 40, status: "Завершила челлендж!", online: true },
-  { id: 4, name: "Дима Новиков", avatar: "🚀", books: 14, streak: 7, status: "Читает: Дюна", online: false },
-];
 
 const BOOK_COVERS = ["📕", "📘", "📗", "📙", "📒", "📓", "📔", "📖"];
 
@@ -906,56 +891,187 @@ function BooksPage({ books, stats, loading, token, onRefresh }: {
   );
 }
 
+// ─── FRIENDS TYPES ───────────────────────────────────────────────────────────
+
+const FRIENDS_URL = "https://functions.poehali.dev/d57b2aed-d3f3-4b33-bb08-4df9ae82d937";
+
+async function apiFriends(action: string, method = "GET", body?: object, token?: string) {
+  const res = await fetch(`${FRIENDS_URL}?action=${action}`, {
+    method,
+    headers: { "Content-Type": "application/json", ...(token ? { "X-Session-Id": token } : {}) },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  return res.json();
+}
+
+interface FriendEntry {
+  id: number; name: string; class: string;
+  books_done: number; books_total?: number; pages_read?: number;
+  rank?: number; is_me?: boolean;
+}
+
+// ─── AVATAR helpers ──────────────────────────────────────────────────────────
+
+const AVATARS = ["📚","🌸","🚀","🦋","⭐","🎯","🔥","🌙","💎","🏆","🎮","🧠"];
+function getAvatar(id: number) { return AVATARS[id % AVATARS.length]; }
+function getInitials(name: string) {
+  const parts = name.trim().split(" ");
+  return parts.length >= 2 ? parts[0][0] + parts[1][0] : name.slice(0, 2);
+}
+
 // ─── RATING PAGE ──────────────────────────────────────────────────────────────
 
-function RatingPage({ user, stats }: { user: User; stats: Stats }) {
-  const userEntry = { rank: 5, name: user.name, avatar: "⭐", books: stats.done, streak: 0, points: stats.done * 100 + stats.total_pages_read, isMe: true };
-  const allRating = [...RATING, userEntry].sort((a, b) => b.points - a.points).map((u, i) => ({ ...u, rank: i + 1 }));
+function RatingPage({ token }: { token: string }) {
+  const [rating, setRating] = useState<FriendEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    apiFriends("rating", "GET", undefined, token)
+      .then(d => { if (d.rating) setRating(d.rating); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [token]);
+
+  const top3 = rating.slice(0, 3);
+  const podiumOrder = top3.length >= 3 ? [top3[1], top3[0], top3[2]] : top3.length === 2 ? [top3[1], top3[0]] : top3;
 
   return (
     <div className="p-4 space-y-6 animate-fade-in-up">
       <div>
         <h1 className="font-display font-black text-2xl text-white">Рейтинг</h1>
-        <p className="text-white/50 text-sm">Апрель 2026</p>
+        <p className="text-white/50 text-sm">Среди твоих друзей</p>
       </div>
 
-      {/* Podium */}
-      <div className="glass rounded-3xl p-5">
-        <div className="flex items-end justify-center gap-4">
-          {[allRating[1], allRating[0], allRating[2]].map((u, idx) => (
-            <div key={u.rank} className={`flex flex-col items-center gap-2 ${idx === 1 ? "-translate-y-4" : ""}`}>
-              <div className={`${idx === 1 ? "text-4xl animate-float" : "text-3xl"}`}>{u.avatar}</div>
-              <div className="text-white font-semibold text-xs text-center max-w-[70px] truncate">{u.name}</div>
-              <div className={`text-xs ${idx === 1 ? "text-amber-400 font-semibold" : "text-white/50"}`}>{u.books} книг</div>
-              <div className={`rounded-2xl flex items-center justify-center ${
-                idx === 1 ? "w-20 h-20 grad-gold animate-pulse-glow" : idx === 0 ? "w-16 h-16 bg-white/10" : "w-14 h-14 bg-amber-500/20"
-              }`}>
-                <span className={`font-display font-black text-white ${idx === 1 ? "text-3xl" : idx === 0 ? "text-2xl opacity-60" : "text-xl opacity-60"}`}>
-                  {idx === 1 ? 1 : idx === 0 ? 2 : 3}
-                </span>
+      {loading ? (
+        <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="glass rounded-2xl h-16 animate-pulse" />)}</div>
+      ) : rating.length === 0 ? (
+        <div className="glass rounded-2xl p-8 text-center border border-violet-500/20">
+          <div className="text-4xl mb-3">🏅</div>
+          <h3 className="font-display font-bold text-white mb-2">Добавь друзей</h3>
+          <p className="text-white/50 text-sm">Рейтинг появится, когда добавишь друзей в разделе «Друзья»</p>
+        </div>
+      ) : (
+        <>
+          {/* Podium */}
+          {top3.length >= 2 && (
+            <div className="glass rounded-3xl p-5">
+              <div className="flex items-end justify-center gap-4">
+                {podiumOrder.map((u, idx) => {
+                  const isFirst = idx === 1 || (top3.length < 3 && idx === 1);
+                  const actualRank = u.rank!;
+                  return (
+                    <div key={u.id} className={`flex flex-col items-center gap-2 ${isFirst ? "-translate-y-4" : ""}`}>
+                      <div className={`${isFirst ? "text-4xl animate-float" : "text-3xl"}`}>{getAvatar(u.id)}</div>
+                      <div className="text-white font-semibold text-xs text-center max-w-[72px] truncate">{u.name.split(" ")[0]}</div>
+                      <div className={`text-xs ${isFirst ? "text-amber-400 font-semibold" : "text-white/50"}`}>{u.books_done} книг</div>
+                      <div className={`rounded-2xl flex items-center justify-center ${
+                        isFirst ? "w-20 h-20 grad-gold animate-pulse-glow" : "w-16 h-16 bg-white/10"
+                      }`}>
+                        <span className={`font-display font-black text-white ${isFirst ? "text-3xl" : "text-2xl opacity-60"}`}>
+                          {actualRank}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
-          ))}
-        </div>
-      </div>
+          )}
 
-      <div className="space-y-2">
-        {allRating.map((u, i) => (
-          <div key={i} className={`rounded-2xl p-4 flex items-center gap-3 hover-lift ${u.isMe ? "grad-primary" : "glass"}`}>
-            <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-display font-black text-sm ${u.rank === 1 ? "bg-amber-400 text-white" : "bg-white/10 text-white/60"}`}>
-              {u.rank}
-            </div>
-            <div className="text-2xl">{u.avatar}</div>
-            <div className="flex-1">
-              <div className="font-semibold text-white text-sm">{u.name}</div>
-              <div className="text-white/50 text-xs">{u.books} книг</div>
-            </div>
-            <div className="text-right">
-              <div className="font-display font-bold text-white">{u.points.toLocaleString()}</div>
-              <div className="text-white/50 text-xs">очков</div>
-            </div>
+          {/* Full list */}
+          <div className="space-y-2">
+            {rating.map((u) => (
+              <div key={u.id} className={`rounded-2xl p-4 flex items-center gap-3 hover-lift ${u.is_me ? "grad-primary" : "glass"}`}>
+                <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-display font-black text-sm ${
+                  u.rank === 1 ? "bg-amber-400 text-white" : u.rank === 2 ? "bg-slate-400 text-white" : u.rank === 3 ? "bg-amber-700 text-white" : "bg-white/10 text-white/60"
+                }`}>
+                  {u.rank}
+                </div>
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500/30 to-pink-500/30 flex items-center justify-center text-lg font-bold text-white flex-shrink-0">
+                  {getInitials(u.name)}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="font-semibold text-white text-sm flex items-center gap-1.5">
+                    {u.name}
+                    {u.is_me && <span className="text-white/60 text-xs font-normal">(ты)</span>}
+                  </div>
+                  <div className="text-white/50 text-xs">{u.class} класс</div>
+                </div>
+                <div className="text-right flex-shrink-0">
+                  <div className="font-display font-bold text-white">{u.books_done}</div>
+                  <div className="text-white/50 text-xs">книг</div>
+                </div>
+              </div>
+            ))}
           </div>
-        ))}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ─── ADD FRIEND MODAL ─────────────────────────────────────────────────────────
+
+function AddFriendModal({ token, onAdded, onClose }: {
+  token: string; onAdded: () => void; onClose: () => void;
+}) {
+  const [friendId, setFriendId] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+
+  const handleAdd = async () => {
+    const id = friendId.trim().replace(/\D/g, "");
+    if (!id) { setError("Введи ID друга"); return; }
+    setLoading(true); setError(""); setSuccess("");
+    try {
+      const data = await apiFriends("add", "POST", { friend_user_id: parseInt(id) }, token);
+      if (data.ok || data.already) {
+        setSuccess(data.already ? `${data.name} уже в друзьях` : `${data.name} добавлен!`);
+        setFriendId("");
+        onAdded();
+      } else {
+        setError(data.error || "Ошибка");
+      }
+    } catch { setError("Нет соединения"); }
+    finally { setLoading(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-end justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="w-full max-w-md glass-strong rounded-3xl p-6 space-y-4 animate-fade-in-up">
+        <div className="flex items-center justify-between">
+          <h2 className="font-display font-bold text-white text-lg">Добавить друга</h2>
+          <button onClick={onClose} className="text-white/40 hover:text-white"><Icon name="X" size={20} /></button>
+        </div>
+
+        <div className="glass rounded-2xl p-4 flex items-start gap-3">
+          <Icon name="Info" size={18} className="text-violet-400 flex-shrink-0 mt-0.5" />
+          <p className="text-white/60 text-sm">Попроси друга открыть свой профиль и назвать ID — число под именем</p>
+        </div>
+
+        <div>
+          <label className="text-white/60 text-xs font-medium mb-1.5 block">ID друга</label>
+          <input
+            value={friendId}
+            onChange={e => setFriendId(e.target.value.replace(/\D/g, ""))}
+            placeholder="Например: 42"
+            inputMode="numeric"
+            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white text-xl font-display font-bold placeholder-white/20 focus:outline-none focus:border-violet-500/60 transition-colors"
+            onKeyDown={e => e.key === "Enter" && handleAdd()}
+          />
+        </div>
+
+        {error && <div className="bg-red-500/15 border border-red-500/30 rounded-xl px-4 py-2.5 text-red-400 text-sm">{error}</div>}
+        {success && <div className="bg-emerald-500/15 border border-emerald-500/30 rounded-xl px-4 py-2.5 text-emerald-400 text-sm">✓ {success}</div>}
+
+        <div className="flex gap-3">
+          <button onClick={onClose} className="flex-1 glass text-white/60 font-semibold py-3 rounded-xl">Закрыть</button>
+          <button onClick={handleAdd} disabled={loading || !friendId}
+            className="flex-1 grad-primary text-white font-bold py-3 rounded-xl disabled:opacity-40">
+            {loading ? "Ищу..." : "Добавить"}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -963,70 +1079,112 @@ function RatingPage({ user, stats }: { user: User; stats: Stats }) {
 
 // ─── FRIENDS PAGE ─────────────────────────────────────────────────────────────
 
-function FriendsPage() {
+function FriendsPage({ token }: { token: string }) {
+  const [friends, setFriends] = useState<FriendEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showAdd, setShowAdd] = useState(false);
+  const [removingId, setRemovingId] = useState<number | null>(null);
+
+  const fetchFriends = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await apiFriends("list", "GET", undefined, token);
+      if (data.friends) setFriends(data.friends);
+    } catch (_e) { /* ignore */ }
+    finally { setLoading(false); }
+  }, [token]);
+
+  useEffect(() => { fetchFriends(); }, [fetchFriends]);
+
+  const handleRemove = async (friendId: number) => {
+    setRemovingId(friendId);
+    await apiFriends("remove", "POST", { friend_user_id: friendId }, token);
+    await fetchFriends();
+    setRemovingId(null);
+  };
+
   return (
     <div className="p-4 space-y-5 animate-fade-in-up">
+      {showAdd && <AddFriendModal token={token} onAdded={fetchFriends} onClose={() => setShowAdd(false)} />}
+
       <div className="flex items-center justify-between">
         <div>
           <h1 className="font-display font-black text-2xl text-white">Друзья</h1>
-          <p className="text-white/50 text-sm">{FRIENDS.length} друга читают</p>
+          <p className="text-white/50 text-sm">{loading ? "..." : `${friends.length} человек`}</p>
         </div>
-        <button className="grad-primary text-white px-4 py-2 rounded-xl text-sm font-semibold flex items-center gap-2">
+        <button onClick={() => setShowAdd(true)}
+          className="grad-primary text-white px-4 py-2 rounded-xl text-sm font-semibold flex items-center gap-2">
           <Icon name="UserPlus" size={16} />
           Добавить
         </button>
       </div>
-      <div>
-        <h2 className="font-semibold text-white/60 text-sm mb-3 uppercase tracking-wider">Онлайн сейчас</h2>
+
+      {loading ? (
+        <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="glass rounded-2xl h-20 animate-pulse" />)}</div>
+      ) : friends.length === 0 ? (
+        <div className="glass rounded-2xl p-8 text-center border border-violet-500/20">
+          <div className="text-4xl mb-3">🤝</div>
+          <h3 className="font-display font-bold text-white mb-2">Пока нет друзей</h3>
+          <p className="text-white/50 text-sm mb-4">Добавь друга по его ID из профиля — читать вместе веселее!</p>
+          <button onClick={() => setShowAdd(true)} className="grad-primary text-white font-semibold px-6 py-2.5 rounded-xl text-sm">
+            Добавить первого друга
+          </button>
+        </div>
+      ) : (
         <div className="space-y-3">
-          {FRIENDS.filter(f => f.online).map((friend) => (
-            <div key={friend.id} className="glass rounded-2xl p-4 flex items-center gap-3 hover-lift">
-              <div className="relative">
-                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-violet-500/30 to-pink-500/30 flex items-center justify-center text-2xl">{friend.avatar}</div>
-                <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-emerald-400 rounded-full border-2 border-background" />
+          {friends.map((friend, i) => (
+            <div key={friend.id} className="glass rounded-2xl p-4 flex items-center gap-3 hover-lift"
+              style={{ animationDelay: `${i * 0.05}s` }}>
+              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-violet-500/30 to-pink-500/30 flex items-center justify-center text-xl font-bold text-white flex-shrink-0">
+                {getInitials(friend.name)}
               </div>
-              <div className="flex-1">
-                <div className="font-semibold text-white">{friend.name}</div>
-                <div className="text-emerald-400 text-xs">{friend.status}</div>
+              <div className="flex-1 min-w-0">
+                <div className="font-semibold text-white truncate">{friend.name}</div>
+                <div className="text-white/40 text-xs">{friend.class} класс · ID {friend.id}</div>
+                <div className="flex gap-3 mt-1">
+                  <span className="text-emerald-400 text-xs font-medium">{friend.books_done} прочитано</span>
+                  <span className="text-white/30 text-xs">·</span>
+                  <span className="text-white/40 text-xs">{friend.books_total} всего</span>
+                </div>
               </div>
-              <div className="text-right">
-                <div className="text-white font-semibold">{friend.books}</div>
-                <div className="text-white/40 text-xs">книг</div>
-              </div>
+              <button
+                onClick={() => handleRemove(friend.id)}
+                disabled={removingId === friend.id}
+                className="flex-shrink-0 glass w-9 h-9 rounded-xl flex items-center justify-center text-white/30 hover:text-red-400 transition-colors disabled:opacity-30">
+                <Icon name={removingId === friend.id ? "Loader2" : "UserMinus"} size={16} />
+              </button>
             </div>
           ))}
         </div>
-      </div>
-      <div>
-        <h2 className="font-semibold text-white/60 text-sm mb-3 uppercase tracking-wider">Были недавно</h2>
-        <div className="space-y-3">
-          {FRIENDS.filter(f => !f.online).map((friend) => (
-            <div key={friend.id} className="glass rounded-2xl p-4 flex items-center gap-3 opacity-70">
-              <div className="relative">
-                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-white/5 to-white/10 flex items-center justify-center text-2xl">{friend.avatar}</div>
-                <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-white/20 rounded-full border-2 border-background" />
-              </div>
-              <div className="flex-1">
-                <div className="font-semibold text-white">{friend.name}</div>
-                <div className="text-white/40 text-xs">{friend.status}</div>
-              </div>
-              <div className="text-right">
-                <div className="text-white font-semibold">{friend.books}</div>
-                <div className="text-white/40 text-xs">книг</div>
-              </div>
-            </div>
-          ))}
+      )}
+
+      {/* Hint block */}
+      {friends.length > 0 && (
+        <div className="glass rounded-2xl p-4 flex items-start gap-3 border border-violet-500/15">
+          <Icon name="Info" size={16} className="text-violet-400 flex-shrink-0 mt-0.5" />
+          <p className="text-white/50 text-xs">Свой ID можно найти в разделе «Профиль» под именем. Поделись им с друзьями!</p>
         </div>
-      </div>
-      <div className="glass rounded-2xl p-5 text-center border border-violet-500/20">
-        <div className="text-3xl mb-2">🤝</div>
-        <h3 className="font-display font-bold text-white mb-1">Позови друзей!</h3>
-        <p className="text-white/50 text-sm mb-4">Читать вместе веселее. Пригласи друга и получи 100 очков.</p>
-        <button className="grad-primary text-white font-semibold px-6 py-2.5 rounded-xl text-sm w-full">
-          Отправить приглашение
-        </button>
-      </div>
+      )}
     </div>
+  );
+}
+
+// ─── ID BADGE ────────────────────────────────────────────────────────────────
+
+function IDbadge({ userId }: { userId: number }) {
+  const [copied, setCopied] = useState(false);
+  const copy = () => {
+    navigator.clipboard.writeText(String(userId));
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+  return (
+    <button onClick={copy}
+      className="mt-2 flex items-center gap-2 glass rounded-xl px-3 py-1.5 transition-all hover:border-violet-500/40">
+      <span className="text-white/50 text-xs">Мой ID:</span>
+      <span className="font-display font-black text-white text-sm tracking-wide">#{userId}</span>
+      <Icon name={copied ? "Check" : "Copy"} size={12} className={copied ? "text-emerald-400" : "text-white/40"} />
+    </button>
   );
 }
 
@@ -1047,6 +1205,7 @@ function ProfilePage({ user, books, stats, onLogout }: {
             <div>
               <h1 className="font-display font-black text-2xl text-white">{user.name}</h1>
               <p className="text-white/70 text-sm">{user.class} класс</p>
+              <IDbadge userId={user.user_id} />
             </div>
             <button onClick={onLogout} className="glass rounded-xl px-3 py-2 text-white/60 text-xs font-medium flex items-center gap-1.5">
               <Icon name="LogOut" size={14} />
@@ -1250,8 +1409,8 @@ export default function App() {
       case "home": return <HomePage user={user} books={books} stats={stats} loading={loadingBooks} setPage={setPage} token={user.token} onRefresh={fetchBooks} />;
       case "challenges": return <ChallengesPage token={user.token} />;
       case "books": return <BooksPage books={books} stats={stats} loading={loadingBooks} token={user.token} onRefresh={fetchBooks} />;
-      case "rating": return <RatingPage user={user} stats={stats} />;
-      case "friends": return <FriendsPage />;
+      case "rating": return <RatingPage token={user.token} />;
+      case "friends": return <FriendsPage token={user.token} />;
       case "profile": return <ProfilePage user={user} books={books} stats={stats} onLogout={handleLogout} />;
     }
   };
